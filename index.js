@@ -10,7 +10,7 @@
 
 	const NAMESPACE = "spicetify-rewind-plugin";
 	// From https://samplefocus.com/samples/vinyl-rewind
-	const REWIND_AUDIO_URL = "https://github.com/VLTNOgithub/spicetify-better-rewind/raw/refs/heads/main/rewind.mp3";
+	const REWIND_AUDIO_URL = "https://raw.githubusercontent.com/VLTNOgithub/spicetify-better-rewind/main/rewind.mp3";
 	const REWIND_AUDIO_INTRO = 0.5; // scratch-in start
 	const REWIND_LOOP_START = 0.92; // scratch-in end / loopable body start
 	const REWIND_LOOP_END = 1.25; // loopable body end / scratch-out tail start
@@ -57,18 +57,27 @@
 	let gainNode = audioCtx.createGain();
 	gainNode.connect(audioCtx.destination);
 
+	// Scale Spotify volume (0-1) for the Web Audio gain node
+	// Spotify's value is already perceptually curved, so a gentle
+	// scale-down keeps the SFX at a similar level to the music
+	function scaleVolume() {
+		const v = Spicetify.Player.getVolume();
+		return v * v * v;
+	}
+
 	// Fetch and decode the rewind sound into an AudioBuffer
 	fetch(REWIND_AUDIO_URL)
 		.then(res => res.arrayBuffer())
 		.then(data => audioCtx.decodeAudioData(data))
-		.then(buffer => { audioBuffer = buffer; });
+		.then(buffer => { audioBuffer = buffer; })
+		.catch(err => console.error('[BetterRewind] audio load failed:', err));
 
-	function playIntroAndLoop(volume) {
+	function playIntroAndLoop() {
 		if (!audioBuffer) return;
 		stopAudioHard();
 		if (audioCtx.state === 'suspended') audioCtx.resume();
 
-		gainNode.gain.value = volume;
+		gainNode.gain.value = scaleVolume();
 
 		const introDuration = REWIND_LOOP_START - REWIND_AUDIO_INTRO;
 
@@ -160,10 +169,7 @@
 		}
 
 		// Scale the rewind audio volume with the player volume
-		const currentVolume = Spicetify.Player.getVolume();
-		const clampedVolume = clamp(currentVolume, 0, 0.8);
-		const scaledVolume = Math.pow(clampedVolume, 3);
-		playIntroAndLoop(scaledVolume);
+		playIntroAndLoop();
 
 		$icon.classList.remove(`${NAMESPACE}--playing`);
 		$icon.classList.add(`${NAMESPACE}--rewind`);
@@ -174,6 +180,8 @@
 			const seekAmount = REWIND_TICK_MS * REWIND_SPEED;
 			const newPos = Math.max(0, progress - seekAmount);
 			Spicetify.Player.seek(newPos);
+			// Keep sfx volume in sync with Spotify volume
+			gainNode.gain.value = scaleVolume();
 			// If we've hit the start, stop automatically
 			if (newPos <= 0) {
 				stopRewind();

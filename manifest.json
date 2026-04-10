@@ -6,7 +6,7 @@
         "main": "index.js",
         "readme": "README.md",
         "authors": [
-            { "name": "vltno", "url": "https://github.com/vltno" },
+            { "name": "vltno", "url": "https://github.com/VLTNOgithub" },
             { "name": "Nick Colley", "url": "https://github.com/NickColley" }
         ],
         "tags": ["rewind", "fun", "playback"]

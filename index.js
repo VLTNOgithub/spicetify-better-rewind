@@ -10,10 +10,13 @@
 
 	const NAMESPACE = "spicetify-rewind-plugin";
 	// From https://samplefocus.com/samples/vinyl-rewind
-	const REWIND_AUDIO_URL = "https://cdn.jsdelivr.net/gh/NickColley/spicetify-rewind/rewind.mp3";
-	const REWIND_AUDIO_START_TIME = 0.612; // in seconds
-	const REWIND_AUDIO_END_TIME = 2.8; // in seconds
-	const REWIND_TICK_MS = 50; // how often we step backwards (milliseconds)
+	const REWIND_AUDIO_URL = "https://github.com/VLTNOgithub/spicetify-better-rewind/raw/refs/heads/main/rewind.mp3";
+	const REWIND_AUDIO_INTRO = 0.5; // scratch-in start
+	const REWIND_LOOP_START = 0.92; // scratch-in end / loopable body start
+	const REWIND_LOOP_END = 1.25; // loopable body end / scratch-out tail start
+	const REWIND_OUT_END = 3.05; // scratch-out tail end
+	const REWIND_TICK_MS = 200; // how often we step backwards (milliseconds)
+	const REWIND_SPEED = 5; // multiplier - ms of track per ms of real time
 
 	function clamp(num, min, max) {
 		return num <= min
@@ -47,9 +50,67 @@
 		});
 	}
 
-	function stopAudio(audio) {
-		audio.pause()
-		audio.currentTime = REWIND_AUDIO_START_TIME;
+	// Web Audio API for sample-accurate looping
+	const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+	let audioBuffer = null;
+	let activeSource = null;
+	let gainNode = audioCtx.createGain();
+	gainNode.connect(audioCtx.destination);
+
+	// Fetch and decode the rewind sound into an AudioBuffer
+	fetch(REWIND_AUDIO_URL)
+		.then(res => res.arrayBuffer())
+		.then(data => audioCtx.decodeAudioData(data))
+		.then(buffer => { audioBuffer = buffer; });
+
+	function playIntroAndLoop(volume) {
+		if (!audioBuffer) return;
+		stopAudioHard();
+		if (audioCtx.state === 'suspended') audioCtx.resume();
+
+		gainNode.gain.value = volume;
+
+		const introDuration = REWIND_LOOP_START - REWIND_AUDIO_INTRO;
+
+		// Phase 1: play the scratch-in as a one-shot
+		const introSource = audioCtx.createBufferSource();
+		introSource.buffer = audioBuffer;
+		introSource.loop = false;
+		introSource.connect(gainNode);
+		introSource.start(0, REWIND_AUDIO_INTRO, introDuration);
+
+		// Phase 2: schedule the looping body to start exactly when intro ends
+		const loopSource = audioCtx.createBufferSource();
+		loopSource.buffer = audioBuffer;
+		loopSource.loop = true;
+		loopSource.loopStart = REWIND_LOOP_START;
+		loopSource.loopEnd = REWIND_LOOP_END;
+		loopSource.connect(gainNode);
+		loopSource.start(audioCtx.currentTime + introDuration, REWIND_LOOP_START);
+		activeSource = loopSource;
+	}
+
+	function stopAudioHard() {
+		if (activeSource) {
+			try { activeSource.stop(); } catch (e) { }
+			activeSource = null;
+		}
+	}
+
+	function playTail() {
+		if (!audioBuffer) return;
+		if (audioCtx.state === 'suspended') audioCtx.resume();
+		const tailSource = audioCtx.createBufferSource();
+		tailSource.buffer = audioBuffer;
+		tailSource.loop = false;
+		tailSource.connect(gainNode);
+		const tailDuration = REWIND_OUT_END - REWIND_LOOP_END;
+		tailSource.start(0, REWIND_LOOP_END, tailDuration);
+	}
+
+	function stopAudioWithTail() {
+		stopAudioHard();
+		playTail();
 	}
 
 	addStylesToPage(`
@@ -78,15 +139,6 @@
 	const $playerControls = await waitForElement("[aria-label='Player controls']");
 	const $existingBackButton = $playerControls.querySelector("button[aria-label='Previous']");
 
-	const audioClip = new Audio(REWIND_AUDIO_URL);
-	audioClip.currentTime = REWIND_AUDIO_START_TIME;
-	// Loop the rewind sound between the usable region while held
-	audioClip.addEventListener("timeupdate", () => {
-		if (audioClip.currentTime >= REWIND_AUDIO_END_TIME) {
-			audioClip.currentTime = REWIND_AUDIO_START_TIME;
-		}
-	});
-
 	const $button = document.createElement("button");
 	$button.classList = $existingBackButton.classList;
 	$button.innerHTML = $existingBackButton.innerHTML;
@@ -110,17 +162,17 @@
 		// Scale the rewind audio volume with the player volume
 		const currentVolume = Spicetify.Player.getVolume();
 		const clampedVolume = clamp(currentVolume, 0, 0.8);
-		audioClip.volume = Math.pow(clampedVolume, 3).toFixed(2);
-		audioClip.currentTime = REWIND_AUDIO_START_TIME;
-		audioClip.play();
+		const scaledVolume = Math.pow(clampedVolume, 3);
+		playIntroAndLoop(scaledVolume);
 
 		$icon.classList.remove(`${NAMESPACE}--playing`);
 		$icon.classList.add(`${NAMESPACE}--rewind`);
 
-		// Seek backwards by REWIND_TICK_MS every tick (1x rewind speed)
+		// Seek backwards at REWIND_SPEED multiplier
 		rewindInterval = window.setInterval(() => {
 			const progress = Spicetify.Player.getProgress();
-			const newPos = Math.max(0, progress - REWIND_TICK_MS);
+			const seekAmount = REWIND_TICK_MS * REWIND_SPEED;
+			const newPos = Math.max(0, progress - seekAmount);
 			Spicetify.Player.seek(newPos);
 			// If we've hit the start, stop automatically
 			if (newPos <= 0) {
@@ -135,7 +187,7 @@
 		clearInterval(rewindInterval);
 		rewindInterval = null;
 
-		stopAudio(audioClip);
+		stopAudioWithTail();
 		$icon.classList.remove(`${NAMESPACE}--rewind`);
 
 		// Resume playback if it was playing before the rewind
@@ -174,8 +226,8 @@
 	Spicetify.Player.addEventListener("onplaypause", () => {
 		isPlaying = Spicetify.Player.isPlaying();
 		$icon.classList.toggle(`${NAMESPACE}--playing`, isPlaying);
-		if (isPlaying && !audioClip.paused) {
-			stopAudio(audioClip);
+		if (isPlaying && activeSource) {
+			stopAudioHard();
 		}
 	});
 

@@ -1,0 +1,14 @@
+[
+    {
+        "name": "Better Rewind",
+        "description": "Hold to rewind through a track at 1x speed like you're doing a boiler room set.",
+        "preview": "preview.gif",
+        "main": "index.js",
+        "readme": "README.md",
+        "authors": [
+            { "name": "vltno", "url": "https://github.com/vltno" },
+            { "name": "Nick Colley", "url": "https://github.com/NickColley" }
+        ],
+        "tags": ["rewind", "fun", "playback"]
+    }
+]

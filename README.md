@@ -14,6 +14,23 @@ Based on [Reeeeewwwwinnnddd](https://github.com/NickColley/spicetify-rewind) by 
 - Automatically stops when it reaches the start of the track
 - Works with mouse and touch input
 
+## How to install
+
+### 1. Using the Spicetify Marketplace (recommended)
+1. Search `Better Rewind` under the "Extensions" tab
+2. Click the Install button
+3. All done!
+
+### 2. Manual installation
+1. Make sure you have [Spicetify](https://spicetify.app) installed
+2. Download the [index.js](./index.js) file
+3. Put the file inside the Spicetify Extensions directory. Find the correct directory here: [https://spicetify.app/docs/development/extensions](https://spicetify.app/docs/development/extensions)
+4. Then, run ```spicetify config extensions index.js```
+5. Then apply Spicetify by running ```spicetify apply```
+6. All done!
+
 If you enjoy this extension consider giving it a star so other people can find it easier in the marketplace :)
+
+[![Github Stars badge](https://img.shields.io/github/stars/VLTNOgithub/spicetify-better-rewind?style=social)](https://github.com/VLTNOgithub/spicetify-better-rewind/)
 
 ![Spotify control player with a new record vinyl button near the back button](./preview.gif)

@@ -17,14 +17,7 @@
 	const REWIND_OUT_END = 3.05; // scratch-out tail end
 	const REWIND_TICK_MS = 200; // how often we step backwards (milliseconds)
 	const REWIND_SPEED = 5; // multiplier - ms of track per ms of real time
-
-	function clamp(num, min, max) {
-		return num <= min
-			? min
-			: num >= max
-				? max
-				: num
-	}
+	const REWIND_SHIFT_MULTIPLIER = 4; // extra multiplier when holding shift
 
 	function addStylesToPage(styles) {
 		const $style = document.createElement("style");
@@ -53,7 +46,7 @@
 	// Web Audio API for sample-accurate looping
 	const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 	let audioBuffer = null;
-	let activeSource = null;
+	let activeSources = [];
 	let gainNode = audioCtx.createGain();
 	gainNode.connect(audioCtx.destination);
 
@@ -87,6 +80,7 @@
 		introSource.loop = false;
 		introSource.connect(gainNode);
 		introSource.start(0, REWIND_AUDIO_INTRO, introDuration);
+		activeSources.push(introSource);
 
 		// Phase 2: schedule the looping body to start exactly when intro ends
 		const loopSource = audioCtx.createBufferSource();
@@ -96,14 +90,12 @@
 		loopSource.loopEnd = REWIND_LOOP_END;
 		loopSource.connect(gainNode);
 		loopSource.start(audioCtx.currentTime + introDuration, REWIND_LOOP_START);
-		activeSource = loopSource;
+		activeSources.push(loopSource);
 	}
 
 	function stopAudioHard() {
-		if (activeSource) {
-			try { activeSource.stop(); } catch (e) { }
-			activeSource = null;
-		}
+		activeSources.forEach(s => { try { s.stop(); } catch (e) { } });
+		activeSources = [];
 	}
 
 	function playTail() {
@@ -115,6 +107,9 @@
 		tailSource.connect(gainNode);
 		const tailDuration = REWIND_OUT_END - REWIND_LOOP_END;
 		tailSource.start(0, REWIND_LOOP_END, tailDuration);
+		activeSources.push(tailSource);
+		tailPlaying = true;
+		tailSource.onended = () => { tailPlaying = false; };
 	}
 
 	function stopAudioWithTail() {
@@ -154,8 +149,14 @@
 	$button.setAttribute("aria-label", "Rewind");
 
 	let rewindInterval = null;
+	let tailPlaying = false;
 	let wasPlayingBeforeRewind = false;
 	let isPlaying = null;
+	let shiftHeld = false;
+
+	// Track shift key state globally
+	document.addEventListener('keydown', (e) => { if (e.key === 'Shift') shiftHeld = true; });
+	document.addEventListener('keyup', (e) => { if (e.key === 'Shift') shiftHeld = false; });
 
 	function startRewind() {
 		// Don't stack rewinds
@@ -177,7 +178,8 @@
 		// Seek backwards at REWIND_SPEED multiplier
 		rewindInterval = window.setInterval(() => {
 			const progress = Spicetify.Player.getProgress();
-			const seekAmount = REWIND_TICK_MS * REWIND_SPEED;
+			const speed = shiftHeld ? REWIND_SPEED * REWIND_SHIFT_MULTIPLIER : REWIND_SPEED;
+			const seekAmount = REWIND_TICK_MS * speed;
 			const newPos = Math.max(0, progress - seekAmount);
 			Spicetify.Player.seek(newPos);
 			// Keep sfx volume in sync with Spotify volume
@@ -234,7 +236,7 @@
 	Spicetify.Player.addEventListener("onplaypause", () => {
 		isPlaying = Spicetify.Player.isPlaying();
 		$icon.classList.toggle(`${NAMESPACE}--playing`, isPlaying);
-		if (isPlaying && activeSource) {
+		if (isPlaying && activeSources.length > 0 && !tailPlaying) {
 			stopAudioHard();
 		}
 	});

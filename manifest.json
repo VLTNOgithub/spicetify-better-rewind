@@ -1,7 +1,7 @@
 [
     {
         "name": "Better Rewind",
-        "description": "Hold to rewind through a track at 1x speed like you're doing a boiler room set.",
+        "description": "Hold to rewind through a song",
         "preview": "preview.gif",
         "main": "index.js",
         "readme": "README.md",
